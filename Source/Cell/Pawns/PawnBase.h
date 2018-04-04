@@ -3,13 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/"
+#include "GameFramework/Pawn.h"
 #include "PawnBase.generated.h"
 
 class UStaticMeshComponent;
 class USphereComponent;
 
-class UPawnBaseMovementComponent;
+class UPawnMovement;
 
 enum FoodType
 {
@@ -19,13 +19,13 @@ enum FoodType
 };
 
 UCLASS(/*abstract*/)
-class CELL_API APawnBase : public ABasePawn
+class CELL_API APawnBase : public APawn
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this pawn's properties
-	APawnBase();
+	APawnBase(const FObjectInitializer &ObjectInitializer);
 
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -37,6 +37,9 @@ public:
 
 	UFUNCTION()
 	void OnMouthBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnPawnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 protected:
 	// Called when the game starts or when spawned
@@ -52,19 +55,27 @@ public:
 	UPROPERTY(EditAnywhere)
 	USphereComponent *PawnCollision;
 
-	UPawnMovementComponent *MovementComponent;
-	
 	UPROPERTY(EditAnywhere)
-	float MaxVelocity;
+	UPawnMovement *MovementComponent;
 
+	/** Returns CollisionComponent subobject **/
+	USphereComponent* GetCollisionComponent() const { return PawnCollision; }
+	/** Returns MeshComponent subobject **/
+	UStaticMeshComponent* GetMeshComponent() const { return MBody; }
+	
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pawn")
 	float Health;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pawn")
 	float Experience;
+
 	FoodType TypeOfFood;
-	int8 Level;
 
-	FVector CurrentVelocity;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pawn")
+	int Level;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pawn")
 	float Nutriment;
 
 public:

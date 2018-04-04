@@ -5,7 +5,7 @@
 #include <Components/InputComponent.h>
 #include <GameFramework/SpringArmComponent.h>
 
-#include "Pawns/PawnBaseMovementComponent.h"
+#include "Pawns/PawnMovement.h"
 
 #include <Engine.h>
 
@@ -19,18 +19,17 @@ const FName APlayerPawn::CameraYBinding("CameraY");
 const FName APlayerPawn::CameraXBinding("CameraX");
 const FName APlayerPawn::CursorClickModeBinding("CursorClickMode");
 
-APlayerPawn::APlayerPawn()
-	: ScrollRemaining(0.0f)
+APlayerPawn::APlayerPawn(const FObjectInitializer &ObjectInitializer)
+	: Super(ObjectInitializer)
+	, ScrollRemaining(0.0f)
 	, SmoothnessCoefficient(50.0f)
 	, ScrollSpeed(6000.0f)
 	, bCameraSecondMode(false)
 	, bCameraReturned(true)
 	, CameraMoveSpeed(2000.0f)
-	, CameraMoveRemaining(0.0f)
 	, bCursorClickedMode(false)
 	, Hit(ForceInit)
 	, TraceParams(FName(TEXT("RV_Trace")), true)
-	, RotationSpeed(5.0f)
 {
 	PrimaryActorTick.bCanEverTick = true;
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
@@ -60,7 +59,6 @@ void APlayerPawn::BeginPlay()
 
 	Controller = GetWorld()->GetFirstPlayerController();
 	Controller->bShowMouseCursor = true;
-	APawn::Controller = dynamic_cast<AController *>(Controller);
 }
 
 void APlayerPawn::Tick(float DeltaTime)
@@ -71,6 +69,12 @@ void APlayerPawn::Tick(float DeltaTime)
 	
 	if(bCameraSecondMode || !bCameraReturned)
 		CameraMove(DeltaTime);
+
+	if (bCursorClickedMode)
+		MoveToCursor();
+
+	GEngine->AddOnScreenDebugMessage(0, 1, FColor::Cyan, FString::SanitizeFloat(MovementComponent->GetTurnBoost()));
+	GEngine->AddOnScreenDebugMessage(1, 1, FColor::Cyan, FString::SanitizeFloat(MovementComponent->GetTurnSpeed()));
 }
 
 
@@ -78,91 +82,75 @@ void APlayerPawn::SetupPlayerInputComponent(UInputComponent *PlayerInputComponen
 {
 	check(PlayerInputComponent);
 
-	InputComponent->BindAxis(MoveYBinding, this, &APlayerPawn::MoveForward);
-	InputComponent->BindAxis(MoveXBinding, this, &APlayerPawn::MoveRight);
+	PlayerInputComponent->BindAxis(MoveYBinding, this, &APlayerPawn::MoveForward);
+	PlayerInputComponent->BindAxis(MoveXBinding, this, &APlayerPawn::MoveRight);
+	
+	PlayerInputComponent->BindAxis(ScrollBinding);
+	
+	PlayerInputComponent->BindAction(CameraSecondModeBinding, IE_Pressed, this, &APlayerPawn::CameraSecondModePressed);
+	PlayerInputComponent->BindAction(CameraSecondModeBinding, IE_Released, this, &APlayerPawn::CameraSecondModeReleased);
+	
+	PlayerInputComponent->BindAxis(CameraXBinding);
+	PlayerInputComponent->BindAxis(CameraYBinding);
+	
+	PlayerInputComponent->BindAction(CursorClickModeBinding, IE_Pressed, this, &APlayerPawn::CursorModePressed);
+	PlayerInputComponent->BindAction(CursorClickModeBinding, IE_Released, this, &APlayerPawn::CursorModeReleased);
 
-	InputComponent->BindAxis(ScrollBinding);
-
-	InputComponent->BindAction(CameraSecondModeBinding, IE_Pressed, this, &APlayerPawn::CameraSecondModePressed);
-	InputComponent->BindAction(CameraSecondModeBinding, IE_Released, this, &APlayerPawn::CameraSecondModeReleased);
-
-	InputComponent->BindAxis(CameraXBinding);
-	InputComponent->BindAxis(CameraYBinding);
-
-	InputComponent->BindAction(CursorClickModeBinding, IE_Pressed, this, &APlayerPawn::CursorModePressed);
-	InputComponent->BindAction(CursorClickModeBinding, IE_Released, this, &APlayerPawn::CursorModeReleased);
+	PlayerInputComponent->BindAction("AddBoost", IE_Pressed, this, &APlayerPawn::AddBoost);
+	PlayerInputComponent->BindAction("ReduceBoost", IE_Pressed, this, &APlayerPawn::ReduceBoost);
 }
+
+void APlayerPawn::AddBoost()
+{
+	MovementComponent->SetTurnBoost(MovementComponent->GetTurnBoost() + 0.1f);
+}
+void APlayerPawn::ReduceBoost()
+{
+	MovementComponent->SetTurnBoost(MovementComponent->GetTurnBoost() - 0.1f);
+}
+
 
 void APlayerPawn::MoveForward(float AxisValue)
 {
-	if(AxisValue!=0)
-		MovementComponent->AddInputVector(GetActorForwardVector() * AxisValue);
+	if (AxisValue != 0)
+	{
+		FVector WorldForwardVector(1.f, 0.f, 0.f);
+		MovementComponent->AddInputVector(WorldForwardVector * AxisValue);
+	}
 }
 void APlayerPawn::MoveRight(float AxisValue)
 {
-	MovementComponent->AddInputVector(GetActorRightVector()*AxisValue);
+	if (AxisValue != 0)
+	{
+		FVector WorldRightVector(0.f, 1.f, 0.f);
+		MovementComponent->AddInputVector(WorldRightVector * AxisValue);
+	}	
 }
 
-
-APlayerPawn::MoveParams APlayerPawn::CalculateMove(float DeltaTime)
+void APlayerPawn::MoveToCursor()
 {
-	FVector MoveDirection;
-	// If we r into Cursor Clicked Mode we move in the direcion of cursor, otherwise to the inputcontroller direction
-	if (bCursorClickedMode)
-	{
-		MoveDirection = ToCursorDirection();
-	}
-	else
-	{
-		const float ForwardValue = GetInputAxisValue(MoveYBinding);
-		const float RightValue = GetInputAxisValue(MoveXBinding);
-		// Clamp max size so that (X=1, Y=1) doesn't cause faster movement in diagonal directions
-		MoveDirection = FVector(ForwardValue, RightValue, 0.f).GetClampedToMaxSize(1.0f);
-	}
-
-	// Calculate  movement
-	FVector Movement = MoveDirection * MaxVelocity * DeltaTime;
-	FRotator NewRotation = RootComponent->GetComponentRotation();
-	NewRotation.Yaw -= ((RootComponent->GetComponentRotation()-Movement.Rotation())*RotationSpeed*DeltaTime).Yaw;
-	
-
-	// If non-zero size, move this actor
-	if (Movement.SizeSquared() > 0.0f)
-	{
-		FHitResult Hit(1.f);
-		RootComponent->MoveComponent(Movement, NewRotation, true, &Hit);
-
-		if (Hit.IsValidBlockingHit())
-		{
-			const FVector Normal2D = Hit.Normal.GetSafeNormal2D();
-			Movement = FVector(0);//FVector::VectorPlaneProject(Movement, Normal2D) * (1.f - Hit.Time);
-		}	
-	}
-	return { Movement, NewRotation };
+	FVector Direction = ToCursorDirection();
+	MovementComponent->AddInputVector(Direction);
 }
 
-void APlayerPawn::CursorModePressed()
+void APlayerPawn::MoveTo(const FVector &Point)
 {
-	bCursorClickedMode = true;
-}
-
-void APlayerPawn::CursorModeReleased()
-{
-	bCursorClickedMode = false;
+	const FVector Direction = Point - GetActorLocation();
+	MovementComponent->AddInputVector(Direction);
 }
 
 FVector APlayerPawn::ToCursorDirection()
 {
-	FVector Position, Direction;
-	Controller->DeprojectMousePositionToWorld(Position, Direction);
+	FVector WorldLocation, WorldDirection;
+	Controller->DeprojectMousePositionToWorld(WorldLocation, WorldDirection);
 
 	FVector CurrentPos = MBody->GetComponentLocation();
 
 	//call GetWorld() from within an actor extending class
 	GetWorld()->LineTraceSingleByChannel(
 		Hit,        //result
-		Position,    //start
-		Position+Direction*SpringArm->TargetArmLength*2, //end
+		WorldLocation,    //start
+		WorldLocation + WorldDirection * SpringArm->TargetArmLength * 2, //end
 		ECC_Pawn, //collision channel
 		TraceParams
 	);
@@ -176,6 +164,15 @@ FVector APlayerPawn::ToCursorDirection()
 	return FVector(0);
 }
 
+void APlayerPawn::CursorModePressed()
+{
+	bCursorClickedMode = true;
+}
+
+void APlayerPawn::CursorModeReleased()
+{
+	bCursorClickedMode = false;
+}
 
 
 void APlayerPawn::Scroll(float DeltaTime)

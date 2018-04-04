@@ -36,7 +36,7 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	APlayerPawn();
+	APlayerPawn(const FObjectInitializer &ObjectInitializer);
 
 	//For getting mouse coords
 	class APlayerController *Controller;
@@ -48,12 +48,6 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
-	struct MoveParams	//Struct to handle 2 return params from CalculateMove function
-	{
-		FVector Direction;
-		FRotator Rotation;
-	};
-	MoveParams CalculateMove(float DeltaTime);
 	void Scroll(float DeltaTime);
 	void CameraMove(float DeltaTime);
 
@@ -77,8 +71,6 @@ private:
 
 	bool bCameraSecondMode;
 	bool bCameraReturned;
-
-	FVector CameraMoveRemaining;
 ///////////////////////////////////////////////
 
 	void CursorModePressed();
@@ -87,11 +79,13 @@ private:
 	bool bCursorClickedMode;
 	FVector ToCursorDirection();
 ///////////////////////////////////////////////
-
-	UPROPERTY(EditAnywhere)
-	float RotationSpeed;
-
+//Movement Functions
 private:
 	void MoveForward(float AxisValue);
 	void MoveRight(float AxisValue);
+	void MoveToCursor();
+public:
+	void MoveTo(const FVector &Point);
+	void AddBoost();
+	void ReduceBoost();
 };

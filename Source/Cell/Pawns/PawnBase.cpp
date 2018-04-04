@@ -6,10 +6,7 @@
 #include <Components/SphereComponent.h>
 #include <Camera/CameraComponent.h>
 
-#include <GameFramework/PawnMovementComponent.h>
-#include <GameFramework/FloatingPawnMovement.h>
-#include "Pawns/PawnBaseMovementComponent.h"
-#include "TestFloatingPawnMovement.h"
+#include "Pawns/PawnMovement.h"
 
 #include "Food/FoodFlesh.h"
 #include "Food/FoodHerb.h"
@@ -18,35 +15,40 @@
 
 
 // Sets default values
-APawnBase::APawnBase()
-	: Level(1)
+APawnBase::APawnBase(const FObjectInitializer &ObjectInitializer)
+	: Super(ObjectInitializer)
+	, Level(1)
 	, Experience(0.0f)
 	, Health(100.0f)
 	, TypeOfFood(FoodType::Omnivorous)
-	, MaxVelocity(200.0f)
 	, Nutriment(60.0f)
 {
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	bCanBeDamaged = true;
 
 	PawnCollision = CreateDefaultSubobject<USphereComponent>(TEXT("PawnCollision"));
-	PawnCollision->InitSphereRadius(50.0f);
+	PawnCollision->InitSphereRadius(70.0f);
 	PawnCollision->CanCharacterStepUpOn = ECB_No;
 	PawnCollision->bShouldUpdatePhysicsVolume = true;
-	PawnCollision->SetCanEverAffectNavigation(false);
+	PawnCollision->SetCanEverAffectNavigation(true);
 	PawnCollision->bDynamicObstacle = true;
+
+	PawnCollision->OnComponentBeginOverlap.AddDynamic(this, &APawnBase::OnPawnBeginOverlap);
 
 	RootComponent = PawnCollision;
 
 	MBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
+	MBody->SetupAttachment(PawnCollision);
+	MBody->SetRelativeLocation(FVector(0.f));
 
 	MouthCollision = CreateDefaultSubobject<USphereComponent>(TEXT("MouthCollision"));
 	MouthCollision->SetupAttachment(MBody);
 
 	MouthCollision->OnComponentBeginOverlap.AddDynamic(this, &APawnBase::OnMouthBeginOverlap);
 
-	MovementComponent = CreateDefaultSubobject<UPawnMovementComponent, UTestFloatingPawnMovement>(TEXT("MovementComponent"));
-	MovementComponent->UpdatedComponent = RootComponent;	
+	MovementComponent = CreateDefaultSubobject<UPawnMovement>(TEXT("MovementComponent"));
+	MovementComponent->UpdatedComponent = PawnCollision;
 }
 
 // Called when the game starts or when spawned
@@ -99,6 +101,11 @@ void APawnBase::OnMouthBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor*
 	}
 }
 
+
+void APawnBase::OnPawnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	GEngine->AddOnScreenDebugMessage(1, 1, FColor::Cyan, "Overlapped");
+}
 
 void APawnBase::Eat(float val)
 {
